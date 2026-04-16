@@ -1,0 +1,17 @@
+.env
+.env.*
+planner.db
+*.db
+goals.json
+history.json
+profile.json
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.vscode/
+CLAUDE.md
+.streamlit/secrets.toml
+.DS_Store
