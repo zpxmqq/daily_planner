@@ -77,6 +77,10 @@ def render_ai_review_card(data: dict):
     <div class="ai-block-label">今天推进较弱的线</div>
     <div class="ai-block-text" style="color:#F59E0B">{data.get("weak_lines", "")}</div>
   </div>'''}
+  {"" if not data.get("focus_insight") else f'''<div class="ai-block" style="background:#EEF2FF;border-left:3px solid #6366F1;padding:10px 12px;border-radius:6px">
+    <div class="ai-block-label">💡 专注度洞察</div>
+    <div class="ai-block-text" style="color:#3730A3">{data.get("focus_insight", "")}</div>
+  </div>'''}
   <div class="ai-block">
     <div class="ai-block-label">明天最重要的一步</div>
     <div class="ai-highlight" style="font-size:13px;font-weight:600">• {data.get("tomorrow", "—")}</div>

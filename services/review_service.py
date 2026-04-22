@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from collections import Counter
+import datetime as dt
+from collections import Counter, defaultdict
 
 from data.repository import retrieve_rag_chunks
 from services.goal_service import compute_goal_staleness
@@ -37,6 +38,128 @@ def _task_tags(task: dict, goals_by_id: dict[str, dict], goals_by_name: dict[str
             ordered.append(clean)
             seen.add(clean)
     return ordered
+
+
+def _format_minutes(minutes: int) -> str:
+    minutes = int(minutes or 0)
+    if minutes < 60:
+        return f"{minutes}min"
+    hours, rest = divmod(minutes, 60)
+    if rest == 0:
+        return f"{hours}h"
+    return f"{hours}h{rest}min"
+
+
+def _today_time_usage_section(tasks: list[dict]) -> str:
+    """Summarise today's actual vs planned time usage for LLM context."""
+    tracked = [
+        task
+        for task in tasks or []
+        if int(task.get("actual_minutes", 0) or 0) > 0
+    ]
+    if not tracked:
+        return ""
+
+    lines = []
+
+    # With a planned duration: compute deviation
+    deviations = []
+    for task in tracked:
+        duration = int(task.get("duration", 0) or 0)
+        actual = int(task.get("actual_minutes", 0) or 0)
+        if duration <= 0:
+            continue
+        pct = (actual - duration) / duration
+        deviations.append((task, pct, duration, actual))
+
+    if deviations:
+        deviations.sort(key=lambda item: item[1], reverse=True)
+        most_over = deviations[0]
+        most_under = deviations[-1]
+        if most_over[1] > 0.2:
+            task, pct, duration, actual = most_over
+            lines.append(
+                f"- 实际用时最多：{task.get('text', '')}（实际 {_format_minutes(actual)}，预计 {_format_minutes(duration)}，超估 {pct * 100:.0f}%）"
+            )
+        if most_under is not most_over and most_under[1] < -0.2:
+            task, pct, duration, actual = most_under
+            lines.append(
+                f"- 实际用时最少：{task.get('text', '')}（实际 {_format_minutes(actual)}，预计 {_format_minutes(duration)}，低于预计 {-pct * 100:.0f}%）"
+            )
+
+    # Unplanned tasks with time record
+    unplanned = [task for task in tracked if task.get("unplanned")]
+    for task in unplanned[:2]:
+        lines.append(
+            f"- 未预计但发生：{task.get('text', '')}（{_format_minutes(int(task.get('actual_minutes', 0)))}，标为突发）"
+        )
+
+    # Total time tracked
+    total_actual = sum(int(task.get("actual_minutes", 0) or 0) for task in tracked)
+    total_planned = sum(int(task.get("duration", 0) or 0) for task in tasks or [])
+    lines.append(f"- 当天累计实际记录：{_format_minutes(total_actual)}（当天计划总时长 {_format_minutes(total_planned)}）")
+
+    if not lines:
+        return ""
+    return "【今日时间去向】\n" + "\n".join(lines)
+
+
+def _recent_deviation_section(history: list[dict], reference_date: str, days: int = 7) -> str:
+    """Look across the last N days (excluding today) and summarise bias per tag."""
+    try:
+        ref = dt.date.fromisoformat(reference_date)
+    except (TypeError, ValueError):
+        return ""
+
+    window_start = ref - dt.timedelta(days=days)
+    per_tag_deltas: dict[str, list[float]] = defaultdict(list)
+    total_count = 0
+    total_delta_sum = 0.0
+
+    for record in history or []:
+        record_date = record.get("date", "")
+        try:
+            record_date_obj = dt.date.fromisoformat(record_date)
+        except ValueError:
+            continue
+        if not (window_start <= record_date_obj < ref):
+            continue
+        for task in record.get("tasks", []) or []:
+            duration = int(task.get("duration", 0) or 0)
+            actual = int(task.get("actual_minutes", 0) or 0)
+            if duration <= 0 or actual <= 0:
+                continue
+            pct = (actual - duration) / duration
+            tag = str(task.get("tag") or "未分类").strip() or "未分类"
+            per_tag_deltas[tag].append(pct)
+            total_count += 1
+            total_delta_sum += pct
+
+    if total_count == 0:
+        return ""
+
+    lines = []
+    avg_pct = total_delta_sum / total_count
+    if avg_pct > 0.10:
+        lines.append(f"- 平均每任务高估 {avg_pct * 100:.0f}%（共 {total_count} 条有效记录）")
+    elif avg_pct < -0.10:
+        lines.append(f"- 平均每任务低估 {-avg_pct * 100:.0f}%（共 {total_count} 条有效记录）")
+    else:
+        lines.append(f"- 平均偏差较小（±{abs(avg_pct) * 100:.0f}%，共 {total_count} 条记录）")
+
+    for tag, deltas in per_tag_deltas.items():
+        if len(deltas) < 2:
+            continue
+        avg = sum(deltas) / len(deltas)
+        if abs(avg) >= 0.3:
+            direction = "系统性高估" if avg > 0 else "系统性低估"
+            lines.append(f"- '{tag}' 类任务{direction} {abs(avg) * 100:.0f}%（{len(deltas)} 条）")
+        elif abs(avg) <= 0.15:
+            lines.append(f"- '{tag}' 类任务实际 vs 预计偏差较小（±{abs(avg) * 100:.0f}%，{len(deltas)} 条）")
+
+    if not lines:
+        return ""
+    return f"【近 {days} 日预估偏差】\n" + "\n".join(lines)
 
 
 def build_review_rag_query(
@@ -208,6 +331,18 @@ def build_review_context(
         sections.append("【昨日建议追踪】\n" + tracking_text)
     if rag_chunks:
         sections.append(format_rag_context(rag_chunks))
+
+    today_time_section = _today_time_usage_section(tasks)
+    if today_time_section:
+        sections.append(today_time_section)
+
+    recent_section = _recent_deviation_section(
+        history or [],
+        reference_date=today_rec.get("date") if today_rec else "",
+    )
+    if recent_section:
+        sections.append(recent_section)
+
     sections.append(
         "【今日复盘输入】\n"
         f"今日计划：{plan_text or '未单独生成文字计划，以下以任务清单为准'}\n\n"

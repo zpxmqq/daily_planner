@@ -153,9 +153,21 @@ def _create_tables(connection: sqlite3.Connection):
             updated_at TEXT NOT NULL DEFAULT ''
         );
 
+        CREATE TABLE IF NOT EXISTS task_sessions (
+            session_id TEXT PRIMARY KEY,
+            record_date TEXT NOT NULL,
+            task_key TEXT NOT NULL,
+            started_at TEXT NOT NULL,
+            ended_at TEXT NOT NULL DEFAULT '',
+            duration_sec INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT ''
+        );
+
         CREATE INDEX IF NOT EXISTS idx_history_tasks_record_date ON history_tasks(record_date);
         CREATE INDEX IF NOT EXISTS idx_rag_chunks_record_date ON rag_chunks(record_date);
         CREATE INDEX IF NOT EXISTS idx_rag_chunks_chunk_type ON rag_chunks(chunk_type);
+        CREATE INDEX IF NOT EXISTS idx_task_sessions_record_date ON task_sessions(record_date);
+        CREATE INDEX IF NOT EXISTS idx_task_sessions_active ON task_sessions(ended_at);
         """
     )
 
@@ -168,6 +180,9 @@ def _ensure_column(connection: sqlite3.Connection, table: str, column: str, defi
 
 def _migrate_schema(connection: sqlite3.Connection):
     _ensure_column(connection, "profile", "feedback_style", "TEXT NOT NULL DEFAULT 'rational'")
+    _ensure_column(connection, "history_tasks", "actual_minutes", "INTEGER NOT NULL DEFAULT 0")
+    _ensure_column(connection, "history_tasks", "auto_tag_source", "TEXT NOT NULL DEFAULT ''")
+    _ensure_column(connection, "history_tasks", "unplanned", "INTEGER NOT NULL DEFAULT 0")
 
 
 def _has_runtime_data(connection: sqlite3.Connection) -> bool:
@@ -233,6 +248,9 @@ def _normalize_task(task: dict, goal_name_to_id: dict[str, str]) -> tuple[dict, 
         ("done", False),
         ("tag", ""),
         ("note", ""),
+        ("actual_minutes", 0),
+        ("auto_tag_source", ""),
+        ("unplanned", False),
     ):
         if key not in normalized:
             normalized[key] = default
@@ -256,6 +274,12 @@ def _normalize_task(task: dict, goal_name_to_id: dict[str, str]) -> tuple[dict, 
     normalized["tag"] = str(normalized.get("tag") or "").strip()
     normalized["note"] = str(normalized.get("note") or "").strip()
     normalized["goal_id"] = str(normalized.get("goal_id") or "").strip()
+    try:
+        normalized["actual_minutes"] = int(normalized.get("actual_minutes", 0) or 0)
+    except (TypeError, ValueError):
+        normalized["actual_minutes"] = 0
+    normalized["auto_tag_source"] = str(normalized.get("auto_tag_source") or "").strip()
+    normalized["unplanned"] = bool(normalized.get("unplanned"))
     return normalized, changed
 
 
@@ -358,7 +382,8 @@ def _write_goals_to_connection(connection: sqlite3.Connection, goals: list[dict]
 def _history_tasks_for_connection(connection: sqlite3.Connection) -> dict[str, list[dict]]:
     rows = connection.execute(
         """
-        SELECT record_date, task_order, text, goal, goal_id, priority, duration, must, done, tag, note
+        SELECT record_date, task_order, text, goal, goal_id, priority, duration, must, done, tag, note,
+               actual_minutes, auto_tag_source, unplanned
         FROM history_tasks
         ORDER BY record_date, task_order, id
         """
@@ -376,6 +401,9 @@ def _history_tasks_for_connection(connection: sqlite3.Connection) -> dict[str, l
                 "done": bool(row["done"]),
                 "tag": row["tag"],
                 "note": row["note"],
+                "actual_minutes": int(row["actual_minutes"] or 0),
+                "auto_tag_source": row["auto_tag_source"] or "",
+                "unplanned": bool(row["unplanned"]),
             }
         )
     return task_map
@@ -447,7 +475,8 @@ def _get_record_from_connection(connection: sqlite3.Connection, date: str) -> di
 
     tasks = connection.execute(
         """
-        SELECT text, goal, goal_id, priority, duration, must, done, tag, note
+        SELECT text, goal, goal_id, priority, duration, must, done, tag, note,
+               actual_minutes, auto_tag_source, unplanned
         FROM history_tasks
         WHERE record_date = ?
         ORDER BY task_order, id
@@ -467,6 +496,9 @@ def _get_record_from_connection(connection: sqlite3.Connection, date: str) -> di
                 "done": bool(task["done"]),
                 "tag": task["tag"],
                 "note": task["note"],
+                "actual_minutes": int(task["actual_minutes"] or 0),
+                "auto_tag_source": task["auto_tag_source"] or "",
+                "unplanned": bool(task["unplanned"]),
             }
             for task in tasks
         ],
@@ -530,8 +562,9 @@ def _upsert_record_to_connection(connection: sqlite3.Connection, record: dict):
         connection.executemany(
             """
             INSERT INTO history_tasks (
-                record_date, task_order, text, goal, goal_id, priority, duration, must, done, tag, note
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                record_date, task_order, text, goal, goal_id, priority, duration, must, done, tag, note,
+                actual_minutes, auto_tag_source, unplanned
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 (
@@ -546,6 +579,9 @@ def _upsert_record_to_connection(connection: sqlite3.Connection, record: dict):
                     int(bool(task.get("done"))),
                     task.get("tag", ""),
                     task.get("note", ""),
+                    int(task.get("actual_minutes", 0) or 0),
+                    str(task.get("auto_tag_source") or ""),
+                    int(bool(task.get("unplanned"))),
                 )
                 for index, task in enumerate(record["tasks"])
             ],
@@ -764,6 +800,78 @@ def save_profile(profile: dict):
         _write_profile_to_connection(connection, merged)
         connection.commit()
     _clear_caches()
+
+
+def _row_to_session(row: sqlite3.Row) -> dict:
+    return {
+        "session_id": row["session_id"],
+        "record_date": row["record_date"],
+        "task_key": row["task_key"],
+        "started_at": row["started_at"],
+        "ended_at": row["ended_at"] or "",
+        "duration_sec": int(row["duration_sec"] or 0),
+        "created_at": row["created_at"] or "",
+    }
+
+
+def load_task_sessions(
+    date: str | None = None,
+    task_key: str | None = None,
+    active_only: bool = False,
+) -> list[dict]:
+    """Load task_sessions, optionally filtered by date / task_key / active state."""
+    _ensure_database()
+    sql = "SELECT session_id, record_date, task_key, started_at, ended_at, duration_sec, created_at FROM task_sessions WHERE 1=1"
+    params: list = []
+    if date is not None:
+        sql += " AND record_date = ?"
+        params.append(date)
+    if task_key is not None:
+        sql += " AND task_key = ?"
+        params.append(task_key)
+    if active_only:
+        sql += " AND (ended_at IS NULL OR ended_at = '')"
+    sql += " ORDER BY started_at"
+    with _connect() as connection:
+        rows = connection.execute(sql, params).fetchall()
+    return [_row_to_session(row) for row in rows]
+
+
+def upsert_task_session(session: dict):
+    """Idempotent write keyed on session_id."""
+    _ensure_database()
+    with _connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO task_sessions (
+                session_id, record_date, task_key, started_at, ended_at, duration_sec, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(session_id) DO UPDATE SET
+                record_date = excluded.record_date,
+                task_key = excluded.task_key,
+                started_at = excluded.started_at,
+                ended_at = excluded.ended_at,
+                duration_sec = excluded.duration_sec,
+                created_at = excluded.created_at
+            """,
+            (
+                str(session["session_id"]),
+                str(session["record_date"]),
+                str(session.get("task_key", "")),
+                str(session.get("started_at", "")),
+                str(session.get("ended_at", "") or ""),
+                int(session.get("duration_sec", 0) or 0),
+                str(session.get("created_at", "") or ""),
+            ),
+        )
+        connection.commit()
+
+
+def delete_task_session(session_id: str):
+    _ensure_database()
+    with _connect() as connection:
+        connection.execute("DELETE FROM task_sessions WHERE session_id = ?", (session_id,))
+        connection.commit()
 
 
 def upsert_rag_chunks_for_record(date: str):

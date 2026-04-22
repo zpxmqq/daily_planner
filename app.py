@@ -15,6 +15,7 @@ from pages.personal import page_personal
 from pages.plan import page_plan
 from pages.profile import page_profile
 from pages.review import page_review
+from pages.time_analysis import page_time_analysis
 
 
 if "page" not in st.session_state:
@@ -47,4 +48,5 @@ render_nav()
     "plan": page_plan,
     "review": page_review,
     "history": page_history,
+    "time_analysis": page_time_analysis,
 }.get(st.session_state.page, page_dashboard)()

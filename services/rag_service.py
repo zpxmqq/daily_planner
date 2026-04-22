@@ -79,6 +79,11 @@ def _serialize_task(task: dict, goals_by_id: dict[str, dict], goals_by_name: dic
         parts.append(f"优先级：{task['priority']}")
     if task.get("duration") is not None:
         parts.append(f"时长：{task.get('duration', 0)} 分钟")
+    actual_minutes = int(task.get("actual_minutes", 0) or 0)
+    if actual_minutes > 0:
+        parts.append(f"实际用时：{actual_minutes} 分钟")
+    if task.get("unplanned"):
+        parts.append("突发任务")
     if task.get("must"):
         parts.append("必须完成")
     if task.get("done"):

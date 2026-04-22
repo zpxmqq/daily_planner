@@ -46,16 +46,37 @@ def page_review():
         updated_tasks = []
         if tasks:
             st.markdown('<div class="sec-label">今日任务</div>', unsafe_allow_html=True)
+            st.caption("实际用时若未用计时器记录，可在此手填；供 AI 做专注度分析。")
             for index, task in enumerate(tasks):
                 done = st.checkbox(task["text"], value=task.get("done", False), key=f"rv_t_{index}")
-                note = st.text_input(
-                    f"note_{index}",
-                    value=task.get("note", ""),
-                    placeholder="一句短备注（可选）",
-                    label_visibility="collapsed",
-                    key=f"rv_note_{index}",
+                note_col, actual_col = st.columns([3, 1])
+                with note_col:
+                    note = st.text_input(
+                        f"note_{index}",
+                        value=task.get("note", ""),
+                        placeholder="一句短备注（可选）",
+                        label_visibility="collapsed",
+                        key=f"rv_note_{index}",
+                    )
+                with actual_col:
+                    actual_minutes = st.number_input(
+                        "实际用时",
+                        min_value=0,
+                        max_value=600,
+                        value=int(task.get("actual_minutes", 0) or 0),
+                        step=5,
+                        key=f"rv_actual_{index}",
+                        label_visibility="collapsed",
+                        help=f"预计 {task.get('duration', 0)} 分钟",
+                    )
+                updated_tasks.append(
+                    {
+                        **task,
+                        "done": done,
+                        "note": note.strip(),
+                        "actual_minutes": int(actual_minutes or 0),
+                    }
                 )
-                updated_tasks.append({**task, "done": done, "note": note.strip()})
         else:
             st.markdown(
                 '<div class="card" style="color:#9CA3AF;font-size:13px;text-align:center;padding:18px">今天还没有晨间计划，也可以直接补充完成内容。</div>',

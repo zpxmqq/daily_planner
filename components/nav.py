@@ -5,6 +5,7 @@ NAV_ITEMS = [
     ("plan", "今日计划"),
     ("review", "晚间复盘"),
     ("history", "历史"),
+    ("time_analysis", "时间分析"),
 ]
 
 
