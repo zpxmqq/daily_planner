@@ -20,6 +20,7 @@ from prompts.plan_prompt import PLAN_SYSTEM_PROMPT
 from prompts.profile_prompt import PROFILE_EXTRACTION_PROMPT
 from prompts.review_prompt import REVIEW_SYSTEM_PROMPT
 from services.llm_schemas import normalize_plan_feedback, normalize_review_feedback
+from services.metrics import log_event
 
 LOGGER = logging.getLogger(__name__)
 LOCAL_EMBEDDING_MODEL = "local-hash-v1"
@@ -125,7 +126,13 @@ def call_api(system_prompt: str, user_content: str) -> str:
         return response.choices[0].message.content or ""
     except Exception as exc:
         if "timeout" in str(exc).lower():
+            log_event("llm.call_timeout", {"model": MODEL_NAME}, level="warning")
             return '{"error":"请求超时，请稍后重试。"}'
+        log_event(
+            "llm.call_failed",
+            {"model": MODEL_NAME, "error": str(exc)[:200]},
+            level="warning",
+        )
         return json.dumps({"error": f"调用失败：{exc}"}, ensure_ascii=False)
 
 
@@ -155,6 +162,15 @@ def embed_texts(texts: list[str]) -> list[list[float]]:
             vectors[index] = item.embedding
     except Exception as exc:
         LOGGER.warning("Embedding request failed: %s", exc)
+        log_event(
+            "embedding.api_failed",
+            {"model": get_embedding_model_name(), "error": str(exc)[:200]},
+            level="warning",
+        )
+        if LOCAL_EMBEDDING_FALLBACK:
+            log_event("embedding.local_fallback_used", {"reason": "api_failed"})
+            for index, text in indexed_texts:
+                vectors[index] = _local_embed_text(text)
     return vectors
 
 

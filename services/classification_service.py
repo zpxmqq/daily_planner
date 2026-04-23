@@ -16,6 +16,7 @@ import logging
 from pathlib import Path
 
 from services.llm_service import embed_texts
+from services.metrics import log_event
 from services.task_inference_service import (
     DOMAIN_HINTS,
     _cosine_similarity,
@@ -241,6 +242,7 @@ def classify_task_tag(
         return embedding_hit
 
     if is_unplanned:
+        log_event("classification.unplanned", {"text": task_text[:40]})
         return {
             "tag": UNPLANNED_TAG,
             "auto_source": "unplanned",
@@ -248,6 +250,7 @@ def classify_task_tag(
             "reason": "计划外新增任务，标记为突发",
         }
 
+    log_event("classification.fallback", {"text": task_text[:40]})
     return {
         "tag": FALLBACK_TAG,
         "auto_source": "fallback",

@@ -2,6 +2,7 @@ import streamlit as st
 
 from config.settings import TODAY
 from data.repository import load_profile, save_profile
+from services.demo_seed import seed_demo_data
 from services.llm_service import extract_profile_from_long_text
 
 
@@ -145,6 +146,29 @@ def render_profile_editor(show_header: bool = True):
             )
         )
         st.markdown(f'<div class="card" style="padding:20px;margin-top:14px">{rows}</div>', unsafe_allow_html=True)
+
+    # P1-5: Demo seed button for cold-start demos. Hidden behind an expander
+    # so it doesn't clutter the main flow. Gated on no-data-or-force so we
+    # never clobber a real user's existing history by accident.
+    with st.expander("演示数据（3 天闭环种子）", expanded=False):
+        st.caption(
+            "加载 3 天示例数据：3 个长期目标 + 昨天已完成的计划 + 今天的计划"
+            "骨架。仅当当前无数据时会自动跳过；勾选“覆盖现有数据”可以在演示前强制重置。"
+        )
+        force = st.checkbox("覆盖现有数据（谨慎）", key="demo_seed_force")
+        if st.button("加载演示数据", key="demo_seed_btn"):
+            result = seed_demo_data(force=force)
+            if result["status"] == "seeded":
+                st.success(
+                    f"已写入 {result['goals']} 个目标与 {result['records']} 天记录"
+                    f"（{'、'.join(result['dates'])}）。刷新其他页面查看完整闭环。"
+                )
+                st.rerun()
+            else:
+                st.info(
+                    f"跳过：{result.get('reason', '')}（当前已有 {result.get('goals', 0)} 个"
+                    f"目标、{result.get('records', 0)} 天记录）。"
+                )
 
 
 def page_profile():

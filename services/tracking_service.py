@@ -1,5 +1,11 @@
+import logging
+import math
 import re
 
+from services.metrics import log_event
+
+
+LOGGER = logging.getLogger(__name__)
 
 _STOPWORDS = frozenset(
     "的了是在为了以及不要先再做用和或与也还但并把被让去来从到就都已经"
@@ -8,6 +14,25 @@ _STOPWORDS = frozenset(
 
 _DONE_SIGNALS = ["完成", "做完", "整理完", "写完", "搞定", "已经做", "已经完成", "推进了"]
 _PARTIAL_SIGNALS = ["部分", "还没", "没完成", "没做完", "只做了", "不太懂", "不够", "先做了", "还差"]
+
+# P1-4: when token-overlap rules fail (different vocabulary between the
+# suggestion "9:30 写完 3.2 小节" and the done note "上午把方法章写了"),
+# fall back to semantic similarity via embed_texts. Thresholds are tuned
+# conservatively — the point is to rescue clear synonym cases, not to
+# replace the rule engine.
+_EMBED_BOOST_TO_DONE = 0.78
+_EMBED_BOOST_TO_PARTIAL = 0.62
+
+
+def _cosine(a: list[float], b: list[float]) -> float:
+    if not a or not b or len(a) != len(b):
+        return 0.0
+    dot = sum(x * y for x, y in zip(a, b))
+    na = math.sqrt(sum(x * x for x in a))
+    nb = math.sqrt(sum(y * y for y in b))
+    if na == 0 or nb == 0:
+        return 0.0
+    return dot / (na * nb)
 
 
 def _extract_tokens(text: str) -> set[str]:
@@ -78,9 +103,30 @@ def auto_track_suggestion(yesterday_rec: dict, today_tasks: list, today_extra: s
     has_done_signal = any(signal in notes_text for signal in _DONE_SIGNALS)
     has_partial_signal = any(signal in notes_text for signal in _PARTIAL_SIGNALS)
 
-    hits_preview = "、".join((done_hits or planned_hits)[:4])
-
     hit_count = len(done_hits) + len(planned_hits)
+
+    # P1-4: when token-overlap scoring is weak but the user clearly wrote
+    # notes/extras, use embedding cosine as a rescue signal for synonym
+    # cases. We only try this when the rule engine would otherwise land in
+    # not_obvious / partial — never overwrite a high-confidence `done`.
+    embed_similarity = 0.0
+    embed_applied = False
+    if done_score < 0.4 and (today_full.strip() or planned_tasks.strip()):
+        # Late import to keep this module import-cheap when embedding is
+        # disabled or streamlit isn't loaded.
+        try:
+            from services.llm_service import embed_texts, embedding_enabled
+
+            if embedding_enabled():
+                comparison_text = today_full.strip() or planned_tasks.strip()
+                vectors = embed_texts([suggestion_text, comparison_text])
+                if vectors and vectors[0] and vectors[1]:
+                    embed_similarity = _cosine(vectors[0], vectors[1])
+                    embed_applied = True
+        except Exception as exc:  # pragma: no cover — defensive
+            LOGGER.warning("tracking embedding fallback failed: %s", exc)
+
+    hits_preview = "、".join((done_hits or planned_hits)[:4])
 
     if done_score >= 0.4 and not has_partial_signal:
         reason = (
@@ -114,18 +160,52 @@ def auto_track_suggestion(yesterday_rec: dict, today_tasks: list, today_extra: s
             reason = "今天缺少足够的计划或完成记录，系统无法判断昨日建议是否被执行。"
         status = "not_obvious"
 
+    # P1-4: upgrade status when embedding similarity is very high. We only
+    # promote, never demote — a rule-based "done" stays "done" regardless of
+    # embedding noise.
+    embed_upgraded = False
+    if embed_applied and status != "done":
+        if embed_similarity >= _EMBED_BOOST_TO_DONE and not has_partial_signal:
+            status = "done"
+            reason = (
+                f"完成记录与昨日建议在语义上高度相似（cos={embed_similarity:.2f}），"
+                f"虽然关键词匹配不高，但内容实质一致。"
+            )
+            embed_upgraded = True
+            log_event(
+                "tracking.embedding_upgrade",
+                {"to": "done", "similarity": round(embed_similarity, 3)},
+            )
+        elif embed_similarity >= _EMBED_BOOST_TO_PARTIAL and status == "not_obvious":
+            status = "partial"
+            reason = (
+                f"完成记录与昨日建议在语义上存在相关（cos={embed_similarity:.2f}），"
+                f"系统判断至少部分执行，但证据不够明确。"
+            )
+            embed_upgraded = True
+            log_event(
+                "tracking.embedding_upgrade",
+                {"to": "partial", "similarity": round(embed_similarity, 3)},
+            )
+
     # Confidence tier for the UI & downstream prompt — token overlap is weak
     # evidence; we combine hit count with explicit done/partial signal words to
     # decide whether downstream should treat this judgment as reliable.
     if status == "done":
-        if hit_count >= 3 and has_done_signal:
+        if embed_upgraded:
+            # Semantic-only promotion: never claim high confidence, at most
+            # medium when embedding agrees strongly.
+            confidence = "medium" if embed_similarity >= 0.85 else "low"
+        elif hit_count >= 3 and has_done_signal:
             confidence = "high"
         elif hit_count >= 2 or has_done_signal:
             confidence = "medium"
         else:
             confidence = "low"
     elif status == "partial":
-        if hit_count >= 2 and (has_partial_signal or has_done_signal):
+        if embed_upgraded:
+            confidence = "low"
+        elif hit_count >= 2 and (has_partial_signal or has_done_signal):
             confidence = "medium"
         else:
             confidence = "low"
@@ -141,6 +221,7 @@ def auto_track_suggestion(yesterday_rec: dict, today_tasks: list, today_extra: s
         "auto_judged": True,
         "confidence": confidence,
         "hit_count": hit_count,
+        "embed_similarity": round(embed_similarity, 3) if embed_applied else None,
     }
 
 

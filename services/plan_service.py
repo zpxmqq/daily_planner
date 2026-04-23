@@ -8,49 +8,13 @@ from data.repository import retrieve_rag_chunks
 from services.goal_service import compute_goal_staleness
 from services.llm_service import get_embedding_runtime_info
 from services.rag_service import format_rag_context
-
-
-def _goal_key(goal: dict) -> str:
-    return goal.get("goal_id") or goal.get("goal", "")
-
-
-def _safe_date(value: str | None):
-    if not value:
-        return None
-    try:
-        return dt.date.fromisoformat(value)
-    except ValueError:
-        return None
-
-
-def _goal_lookup(goals: list) -> tuple[dict[str, dict], dict[str, dict]]:
-    by_id = {_goal_key(goal): goal for goal in goals}
-    by_name = {goal.get("goal", ""): goal for goal in goals if goal.get("goal")}
-    return by_id, by_name
-
-
-def _task_tags(task: dict, goals_by_id: dict[str, dict], goals_by_name: dict[str, dict]) -> list[str]:
-    tags = []
-    if task.get("tag"):
-        tags.append(str(task["tag"]).strip())
-
-    linked_goal = None
-    if task.get("goal_id") and task["goal_id"] in goals_by_id:
-        linked_goal = goals_by_id[task["goal_id"]]
-    elif task.get("goal") and task["goal"] in goals_by_name:
-        linked_goal = goals_by_name[task["goal"]]
-
-    if linked_goal:
-        tags.extend(linked_goal.get("tags", []))
-
-    ordered = []
-    seen = set()
-    for tag in tags:
-        clean = str(tag).strip()
-        if clean and clean not in seen:
-            ordered.append(clean)
-            seen.add(clean)
-    return ordered
+from services.task_context import (
+    goal_key as _goal_key,
+    goal_lookup as _goal_lookup,
+    is_goal_relevant_today,
+    safe_date as _safe_date,
+    task_tags as _task_tags,
+)
 
 
 def _recent_history_window(history: list, window_days: int = 7) -> list:
@@ -253,7 +217,43 @@ def build_plan_context(
         desc = f"；说明：{goal['description']}" if goal.get("description") else ""
         return f"- {goal['goal']}（重要度 {goal.get('level', 3)}/5{deadline}{tags}{desc}）"
 
-    goals_text = "\n".join(goal_line(goal) for goal in goals) if goals else "暂无长期目标"
+    # P1-2: prioritize goals. Dumping all 50 goals with equal weight dilutes
+    # the signal — keep high-importance / near-deadline / today-in-use / stale
+    # goals as full lines, and collapse the rest into a one-line bucket. This
+    # cuts prompt tokens ~30% on well-populated profiles and lets the model
+    # focus on what actually matters this morning.
+    if goals:
+        today_goal_ids = {str(task.get("goal_id") or "").strip() for task in tasks if task.get("goal_id")}
+        today_goal_names = {str(task.get("goal") or "").strip() for task in tasks if task.get("goal")}
+        stale_goal_ids = {
+            str(alert.get("goal_id") or alert.get("goal") or "").strip()
+            for alert in metrics.get("stale_goal_alerts", [])
+        }
+        reference = _safe_date(target_date) or dt.date.today()
+
+        primary_goals = []
+        deferred_goals = []
+        for goal in goals:
+            if is_goal_relevant_today(
+                goal,
+                today_goal_ids=today_goal_ids,
+                today_goal_names=today_goal_names,
+                stale_goal_ids=stale_goal_ids,
+                reference_date=reference,
+            ):
+                primary_goals.append(goal)
+            else:
+                deferred_goals.append(goal)
+
+        goal_lines = [goal_line(goal) for goal in primary_goals] or ["（无当下需要展开的目标）"]
+        if deferred_goals:
+            names_preview = "、".join(goal.get("goal", "") for goal in deferred_goals[:5] if goal.get("goal"))
+            if len(deferred_goals) > 5:
+                names_preview += f"… 等 {len(deferred_goals)} 项"
+            goal_lines.append(f"- 其他长期目标（暂不需要重点关注）：{names_preview}")
+        goals_text = "\n".join(goal_lines)
+    else:
+        goals_text = "暂无长期目标"
 
     def task_line(task):
         must = "，必须完成" if task.get("must") else ""

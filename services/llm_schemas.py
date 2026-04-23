@@ -21,6 +21,8 @@ from __future__ import annotations
 
 import logging
 
+from services.metrics import log_event
+
 LOGGER = logging.getLogger(__name__)
 
 PLAN_FIELDS_STR = ("overall", "covers_focus", "time_assessment", "top_priority")
@@ -96,6 +98,7 @@ def normalize_plan_feedback(raw_data, raw_text: str = "") -> dict:
             "Plan feedback fell through: unparseable LLM output (len=%d)",
             len(raw_text or ""),
         )
+        log_event("plan_feedback.unparseable", {"len": len(raw_text or "")}, level="warning")
         return {
             **_empty_plan_shell(),
             "degraded": True,
@@ -106,6 +109,11 @@ def normalize_plan_feedback(raw_data, raw_text: str = "") -> dict:
     error_message = _extract_error(raw_data)
     if error_message:
         LOGGER.warning("Plan feedback error envelope: %s", error_message)
+        log_event(
+            "plan_feedback.error_envelope",
+            {"error": error_message[:200]},
+            level="warning",
+        )
         return {
             **_empty_plan_shell(),
             "error": error_message,
@@ -118,6 +126,11 @@ def normalize_plan_feedback(raw_data, raw_text: str = "") -> dict:
 
     if _all_empty(fields_str, fields_list):
         LOGGER.warning("Plan feedback content empty (raw len=%d)", len(raw_text or ""))
+        log_event(
+            "plan_feedback.all_empty",
+            {"len": len(raw_text or "")},
+            level="warning",
+        )
         return {
             **_empty_plan_shell(),
             "degraded": True,
@@ -138,6 +151,7 @@ def normalize_review_feedback(raw_data, raw_text: str = "") -> dict:
             "Review feedback fell through: unparseable LLM output (len=%d)",
             len(raw_text or ""),
         )
+        log_event("review_feedback.unparseable", {"len": len(raw_text or "")}, level="warning")
         return {
             **_empty_review_shell(),
             "degraded": True,
@@ -148,6 +162,11 @@ def normalize_review_feedback(raw_data, raw_text: str = "") -> dict:
     error_message = _extract_error(raw_data)
     if error_message:
         LOGGER.warning("Review feedback error envelope: %s", error_message)
+        log_event(
+            "review_feedback.error_envelope",
+            {"error": error_message[:200]},
+            level="warning",
+        )
         return {
             **_empty_review_shell(),
             "error": error_message,
@@ -159,6 +178,11 @@ def normalize_review_feedback(raw_data, raw_text: str = "") -> dict:
 
     if _all_empty(fields_str, {}):
         LOGGER.warning("Review feedback content empty (raw len=%d)", len(raw_text or ""))
+        log_event(
+            "review_feedback.all_empty",
+            {"len": len(raw_text or "")},
+            level="warning",
+        )
         return {
             **_empty_review_shell(),
             "degraded": True,

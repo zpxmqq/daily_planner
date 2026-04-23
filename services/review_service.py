@@ -7,37 +7,8 @@ from data.repository import retrieve_rag_chunks
 from services.goal_service import compute_goal_staleness
 from services.llm_service import get_embedding_runtime_info
 from services.rag_service import format_rag_context
+from services.task_context import goal_lookup as _goal_lookup, task_tags as _task_tags
 from services.tracking_service import STATUS_LABEL
-
-
-def _goal_lookup(goals: list) -> tuple[dict[str, dict], dict[str, dict]]:
-    by_id = {(goal.get("goal_id") or goal.get("goal", "")): goal for goal in goals}
-    by_name = {goal.get("goal", ""): goal for goal in goals if goal.get("goal")}
-    return by_id, by_name
-
-
-def _task_tags(task: dict, goals_by_id: dict[str, dict], goals_by_name: dict[str, dict]) -> list[str]:
-    tags = []
-    if task.get("tag"):
-        tags.append(str(task["tag"]).strip())
-
-    linked_goal = None
-    if task.get("goal_id") and task["goal_id"] in goals_by_id:
-        linked_goal = goals_by_id[task["goal_id"]]
-    elif task.get("goal") and task["goal"] in goals_by_name:
-        linked_goal = goals_by_name[task["goal"]]
-
-    if linked_goal:
-        tags.extend(linked_goal.get("tags", []))
-
-    ordered = []
-    seen = set()
-    for tag in tags:
-        clean = str(tag).strip()
-        if clean and clean not in seen:
-            ordered.append(clean)
-            seen.add(clean)
-    return ordered
 
 
 def _format_minutes(minutes: int) -> str:
