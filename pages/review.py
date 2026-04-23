@@ -29,6 +29,32 @@ def page_review():
         history = load_history()
         profile = load_profile()
 
+        # P0-5: clear stale session_state left over from a different date/page.
+        # Without this, switching from yesterday's review to today's shows
+        # yesterday's AI card / RAG debug / tracking card as if they belong to
+        # today — a "灵异" (ghost card) bug during demos.
+        stale_tracking = st.session_state.get("tracking_result")
+        if stale_tracking and stale_tracking.get("auto_judged"):
+            # Only auto-judged tracking is date-scoped; user-corrected tracking
+            # we keep (it will be re-seeded from today_record below anyway).
+            stale_source = stale_tracking.get("source_date", "")
+            # tracking for date D is computed from day D-1; if our stale entry's
+            # source_date is neither (TODAY-1) nor seen in today_record, drop it.
+            if today_record is None or stale_tracking is not today_record.get("suggestion_tracking"):
+                expected_source = str(datetime.date.fromisoformat(TODAY) - datetime.timedelta(days=1))
+                if stale_source and stale_source != expected_source:
+                    st.session_state.tracking_result = None
+
+        stale_ai = st.session_state.get("review_ai_result")
+        if stale_ai and (today_record is None or today_record.get("ai_review_result") != stale_ai):
+            # AI result has no intrinsic date field; if it doesn't match the
+            # persisted today record, it's from a previous date.
+            st.session_state.review_ai_result = None
+
+        stale_rag = st.session_state.get("review_rag_debug")
+        if stale_rag and (today_record is None or today_record.get("date") != TODAY):
+            st.session_state.review_rag_debug = None
+
         if not st.session_state.get("tracking_result") and today_record and today_record.get("suggestion_tracking"):
             st.session_state.tracking_result = today_record["suggestion_tracking"]
         if not st.session_state.get("review_ai_result") and today_record and today_record.get("ai_review_result"):
@@ -109,12 +135,24 @@ def page_review():
             else:
                 upsert_record(date=TODAY, result=extra, status=status_value)
 
-            yesterday = str(datetime.date.today() - datetime.timedelta(days=1))
-            yesterday_record = get_record(yesterday)
-            tracking = auto_track_suggestion(yesterday_record, updated_tasks, extra)
-            if tracking:
-                upsert_record(date=TODAY, suggestion_tracking=tracking)
+            # P0-2: preserve user manual corrections. If today's record already
+            # has a tracking entry and the user has explicitly overridden it
+            # (auto_judged=False), the previous auto-judgement was wrong and
+            # re-running would silently re-overwrite the user's correction —
+            # breaking the "closed loop" story.
+            existing_tracking = (today_record or {}).get("suggestion_tracking") or st.session_state.get("tracking_result")
+            if existing_tracking and existing_tracking.get("auto_judged") is False:
+                tracking = existing_tracking
+                # Do not re-persist; it was already persisted when the user
+                # edited it. Just surface it again.
                 st.session_state.tracking_result = tracking
+            else:
+                yesterday = str(datetime.date.today() - datetime.timedelta(days=1))
+                yesterday_record = get_record(yesterday)
+                tracking = auto_track_suggestion(yesterday_record, updated_tasks, extra)
+                if tracking:
+                    upsert_record(date=TODAY, suggestion_tracking=tracking)
+                    st.session_state.tracking_result = tracking
 
             done_tasks = [task for task in updated_tasks if task.get("done")]
             undone_list = [task["text"] for task in updated_tasks if not task.get("done")]

@@ -1,6 +1,32 @@
+from html import escape
+
 import streamlit as st
 
 from services.tracking_service import STATUS_COLOR, STATUS_LABEL
+
+# Sentinel shown when the LLM returned valid JSON with an empty list for a
+# given field. This is deliberately different from "暂无明显问题" (which reads
+# as an affirmative "all good") — we want users to be able to tell apart
+# "AI evaluated and said nothing to flag" from "AI did not answer this slot".
+_EMPTY_SLOT_HTML = '<span style="color:#9CA3AF">AI 本轮未给出这一项</span>'
+
+
+def _render_degraded_banner(data: dict) -> None:
+    """Show a yellow warning strip when the LLM output is degraded.
+
+    The normalizer sets ``degraded=True`` for: parse failures, API error
+    envelopes, and all-empty-fields responses. Without this banner the UI
+    silently renders blank sections and users can't distinguish "AI said
+    everything is fine" from "AI didn't actually run".
+    """
+    if not data.get("degraded"):
+        return
+    reason = data.get("degraded_reason") or "AI 输出异常"
+    excerpt = data.get("raw_excerpt") or ""
+    message = f"⚠ AI 输出未通过校验：{reason}"
+    if excerpt:
+        message += f"\n\n原始片段：{excerpt}"
+    st.warning(message)
 
 
 def prog_bar(pct: int, color: str = "#4B6FD4") -> str:
@@ -12,11 +38,13 @@ def render_ai_plan_card(data: dict):
         st.error(data["error"])
         return
 
-    issues_html = "".join(f"<div>• {item}</div>" for item in data.get("issues", [])) or "暂无明显问题"
+    _render_degraded_banner(data)
+
+    issues_html = "".join(f"<div>• {item}</div>" for item in data.get("issues", [])) or _EMPTY_SLOT_HTML
     focus_html = "".join(f'<div class="ai-highlight">• {item}</div>' for item in data.get("focus_tasks", []))
     adjustments_html = "".join(
         f"<div>• {item}</div>" for item in data.get("adjustments", [])
-    ) or "暂无额外调整建议"
+    ) or _EMPTY_SLOT_HTML
 
     st.markdown(
         f"""
@@ -61,6 +89,8 @@ def render_ai_review_card(data: dict):
         st.error(data["error"])
         return
 
+    _render_degraded_banner(data)
+
     st.markdown(
         f"""
 <div class="card card-green">
@@ -91,24 +121,61 @@ def render_ai_review_card(data: dict):
     )
 
 
+def _truncate_with_tooltip(text: str, limit: int = 120) -> str:
+    """Render long text with a soft cap + native ``title`` tooltip for overflow.
+
+    Old behavior truncated at 57 chars + "..." which eats action-detail
+    phrases like "晚 21:00 之前完成实验表". We now surface up to 120 chars
+    inline and keep the full text available on hover.
+    """
+    safe_full = escape(text or "")
+    if len(text or "") <= limit:
+        return safe_full
+    shown = escape(text[: limit - 1]) + "…"
+    return f'<span title="{safe_full}">{shown}</span>'
+
+
+_CONFIDENCE_BADGE = {
+    "low": ("低置信度 · 建议人工确认", "#9CA3AF"),
+    "medium": ("中等置信度", "#6B7280"),
+    "high": ("高置信度", "#10B981"),
+}
+
+
+def _confidence_badge_html(tracking: dict) -> str:
+    if not tracking.get("auto_judged", True):
+        return '<span class="badge" style="background:#6366F1;color:#fff;font-size:10px;margin-left:6px">用户已修正</span>'
+    confidence = tracking.get("confidence")
+    if not confidence or confidence not in _CONFIDENCE_BADGE:
+        return ""
+    text, color = _CONFIDENCE_BADGE[confidence]
+    return (
+        f'<span class="badge" style="background:{color};color:#fff;font-size:10px;margin-left:6px">'
+        f"{text}</span>"
+    )
+
+
 def render_suggestion_tracking_card(tracking: dict, date: str = ""):
     status = tracking.get("status", "not_obvious")
     label = STATUS_LABEL.get(status, status)
     color = STATUS_COLOR.get(status, "#9CA3AF")
     reason = tracking.get("reason", "")
-    suggestion_display = tracking.get("source_tomorrow") or tracking.get("source_top_priority") or "—"
-    if len(suggestion_display) > 60:
-        suggestion_display = suggestion_display[:57] + "..."
+    raw_suggestion = tracking.get("source_tomorrow") or tracking.get("source_top_priority") or "—"
+    suggestion_display = _truncate_with_tooltip(raw_suggestion, limit=120)
+    confidence_html = _confidence_badge_html(tracking)
 
     st.markdown(
         f"""
 <div class="card" style="border-left:4px solid {color};padding:16px 20px;margin-bottom:8px">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
     <div style="font-size:12px;font-weight:700;color:#6B7280;text-transform:uppercase;letter-spacing:.06em">建议追踪情况</div>
-    <span class="badge" style="background:{color};color:#fff;font-size:11px">{label}</span>
+    <div>
+      <span class="badge" style="background:{color};color:#fff;font-size:11px">{label}</span>
+      {confidence_html}
+    </div>
   </div>
-  <div style="font-size:12px;color:#9CA3AF;margin-bottom:6px">昨日建议（{tracking.get("source_date", "")}）：{suggestion_display}</div>
-  <div style="font-size:13px;color:#374151">{reason}</div>
+  <div style="font-size:12px;color:#9CA3AF;margin-bottom:6px">昨日建议（{escape(tracking.get("source_date", ""))}）：{suggestion_display}</div>
+  <div style="font-size:13px;color:#374151">{escape(reason)}</div>
 </div>
 """,
         unsafe_allow_html=True,
@@ -159,19 +226,22 @@ def render_tracking_summary_card(tracking: dict):
     status = tracking.get("status", "not_obvious")
     label = STATUS_LABEL.get(status, status)
     color = STATUS_COLOR.get(status, "#9CA3AF")
-    suggestion = tracking.get("source_tomorrow") or tracking.get("source_top_priority") or "—"
-    if len(suggestion) > 60:
-        suggestion = suggestion[:57] + "..."
+    raw_suggestion = tracking.get("source_tomorrow") or tracking.get("source_top_priority") or "—"
+    suggestion = _truncate_with_tooltip(raw_suggestion, limit=120)
+    confidence_html = _confidence_badge_html(tracking)
 
     st.markdown(
         f"""
 <div class="card" style="border-left:4px solid {color};padding:16px 18px">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
     <div style="font-size:12px;font-weight:700;color:#6B7280;text-transform:uppercase;letter-spacing:.06em">昨日建议追踪</div>
-    <span class="badge" style="background:{color};color:#fff;font-size:11px">{label}</span>
+    <div>
+      <span class="badge" style="background:{color};color:#fff;font-size:11px">{label}</span>
+      {confidence_html}
+    </div>
   </div>
-  <div style="font-size:12px;color:#9CA3AF;margin-bottom:6px">来源：{tracking.get("source_date", "")} · {suggestion}</div>
-  <div style="font-size:13px;color:#374151">{tracking.get("reason", "")}</div>
+  <div style="font-size:12px;color:#9CA3AF;margin-bottom:6px">来源：{escape(tracking.get("source_date", ""))} · {suggestion}</div>
+  <div style="font-size:13px;color:#374151">{escape(tracking.get("reason", ""))}</div>
 </div>
 """,
         unsafe_allow_html=True,

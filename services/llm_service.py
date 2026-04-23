@@ -19,6 +19,7 @@ from config.settings import (
 from prompts.plan_prompt import PLAN_SYSTEM_PROMPT
 from prompts.profile_prompt import PROFILE_EXTRACTION_PROMPT
 from prompts.review_prompt import REVIEW_SYSTEM_PROMPT
+from services.llm_schemas import normalize_plan_feedback, normalize_review_feedback
 
 LOGGER = logging.getLogger(__name__)
 LOCAL_EMBEDDING_MODEL = "local-hash-v1"
@@ -180,32 +181,23 @@ def _style_instruction(feedback_style: str) -> str:
 
 
 def generate_plan_feedback(user_content: str, feedback_style: str = "rational") -> dict:
+    """Call the plan LLM and normalize its output.
+
+    The normalizer guarantees a canonical dict shape and tags degraded
+    responses (parse failure / error envelope / all-empty JSON) with
+    ``degraded=True`` + ``degraded_reason`` so the UI can surface the
+    failure explicitly instead of rendering raw error text as "总体判断".
+    """
     raw = call_api(PLAN_SYSTEM_PROMPT + _style_instruction(feedback_style), user_content)
     data = parse_json_safe(raw)
-    if data:
-        return data
-    return {
-        "overall": raw,
-        "covers_focus": "",
-        "issues": [],
-        "focus_tasks": [],
-        "adjustments": [],
-        "time_assessment": "",
-        "top_priority": "",
-    }
+    return normalize_plan_feedback(data, raw_text=raw)
 
 
 def generate_review_feedback(user_content: str, feedback_style: str = "rational") -> dict:
+    """Call the review LLM and normalize its output. See ``generate_plan_feedback``."""
     raw = call_api(REVIEW_SYSTEM_PROMPT + _style_instruction(feedback_style), user_content)
     data = parse_json_safe(raw)
-    if data:
-        return data
-    return {
-        "score": raw,
-        "real_progress": "",
-        "weak_lines": "",
-        "tomorrow": "",
-    }
+    return normalize_review_feedback(data, raw_text=raw)
 
 
 def extract_profile_from_long_text(user_content: str) -> dict:

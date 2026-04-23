@@ -80,6 +80,8 @@ def auto_track_suggestion(yesterday_rec: dict, today_tasks: list, today_extra: s
 
     hits_preview = "、".join((done_hits or planned_hits)[:4])
 
+    hit_count = len(done_hits) + len(planned_hits)
+
     if done_score >= 0.4 and not has_partial_signal:
         reason = (
             f"今天的完成项与备注和昨日建议高度一致"
@@ -112,6 +114,24 @@ def auto_track_suggestion(yesterday_rec: dict, today_tasks: list, today_extra: s
             reason = "今天缺少足够的计划或完成记录，系统无法判断昨日建议是否被执行。"
         status = "not_obvious"
 
+    # Confidence tier for the UI & downstream prompt — token overlap is weak
+    # evidence; we combine hit count with explicit done/partial signal words to
+    # decide whether downstream should treat this judgment as reliable.
+    if status == "done":
+        if hit_count >= 3 and has_done_signal:
+            confidence = "high"
+        elif hit_count >= 2 or has_done_signal:
+            confidence = "medium"
+        else:
+            confidence = "low"
+    elif status == "partial":
+        if hit_count >= 2 and (has_partial_signal or has_done_signal):
+            confidence = "medium"
+        else:
+            confidence = "low"
+    else:  # not_obvious
+        confidence = "low"
+
     return {
         "source_date": yesterday_rec["date"],
         "source_top_priority": top_priority,
@@ -119,6 +139,8 @@ def auto_track_suggestion(yesterday_rec: dict, today_tasks: list, today_extra: s
         "status": status,
         "reason": reason,
         "auto_judged": True,
+        "confidence": confidence,
+        "hit_count": hit_count,
     }
 
 

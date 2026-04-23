@@ -11,6 +11,10 @@ uses ``auto_source`` to color-code the tag badge and ``reason`` as tooltip.
 
 from __future__ import annotations
 
+import json
+import logging
+from pathlib import Path
+
 from services.llm_service import embed_texts
 from services.task_inference_service import (
     DOMAIN_HINTS,
@@ -18,25 +22,61 @@ from services.task_inference_service import (
     _extract_tokens,
 )
 
+LOGGER = logging.getLogger(__name__)
 
 UNPLANNED_TAG = "突发"
 FALLBACK_TAG = "其他"
 EMBEDDING_THRESHOLD = 0.55
 
 # Extra synonyms layered on top of DOMAIN_HINTS for classification.
-# Keep this narrow: only add high-precision variants, not generic verbs.
-EXTRA_HINTS = {
+# Keep this narrow and **user-agnostic**: only cross-domain synonyms that any
+# user in the same field would recognize. Personal vocabulary (thesis section
+# numbers, specific course codes, HR system names) should live in the external
+# ``config/tag_keywords.json`` so individual users can tune without touching
+# the shipped source.
+EXTRA_HINTS: dict[str, set[str]] = {
     "健身": {"晨跑", "夜跑", "训练", "撸铁", "瑜伽", "器械", "深蹲", "俯卧撑"},
     "英语": {"雅思", "托福", "背词", "朗读"},
-    "论文": {"开题", "答辩", "汇报", "综述", "5.3", "5.4"},
+    "论文": {"综述", "文献", "审稿"},
     "课程": {"网课", "线上课", "讲座"},
-    "实习": {"投递", "笔试", "hr", "oa"},
+    "实习": {"投递", "笔试", "面试"},
 }
+
+
+def _load_custom_hints() -> dict[str, set[str]]:
+    """Load user-defined tag keywords from ``config/tag_keywords.json``.
+
+    Missing file or invalid JSON falls back silently to an empty dict — the
+    built-in hints remain fully functional.
+    """
+    path = Path(__file__).resolve().parent.parent / "config" / "tag_keywords.json"
+    if not path.exists():
+        return {}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        LOGGER.warning("Failed to load custom tag keywords from %s: %s", path, exc)
+        return {}
+
+    custom: dict[str, set[str]] = {}
+    for tag, values in (raw or {}).items():
+        if not isinstance(tag, str) or tag.startswith("_"):
+            continue
+        if not isinstance(values, (list, tuple, set)):
+            continue
+        cleaned = {str(item).strip().lower() for item in values if str(item).strip()}
+        if cleaned:
+            custom[tag.strip()] = cleaned
+    return custom
+
+
+_CUSTOM_HINTS: dict[str, set[str]] = _load_custom_hints()
 
 
 def _combined_hints(tag: str) -> set[str]:
     base = set(DOMAIN_HINTS.get(tag, set()))
     base |= EXTRA_HINTS.get(tag, set())
+    base |= _CUSTOM_HINTS.get(tag, set())
     return base
 
 
@@ -59,7 +99,11 @@ def _keyword_match(task_text: str, known_tags: list[str]) -> dict | None:
     best_hits: list[str] = []
 
     # First try DOMAIN_HINTS keys (well-curated clusters) — these are always candidates
-    candidate_tags = set(DOMAIN_HINTS.keys()) | {str(t).strip() for t in known_tags if str(t).strip()}
+    candidate_tags = (
+        set(DOMAIN_HINTS.keys())
+        | set(_CUSTOM_HINTS.keys())
+        | {str(t).strip() for t in known_tags if str(t).strip()}
+    )
 
     for tag in candidate_tags:
         hints = _combined_hints(tag) | {tag.lower()}
