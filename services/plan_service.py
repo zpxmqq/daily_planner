@@ -9,6 +9,8 @@ from services.goal_service import compute_goal_staleness
 from services.llm_service import get_embedding_runtime_info
 from services.rag_service import format_rag_context
 from services.task_context import (
+    compute_deviation_signal,
+    format_deviation_section,
     goal_key as _goal_key,
     goal_lookup as _goal_lookup,
     is_goal_relevant_today,
@@ -335,6 +337,16 @@ def build_plan_context(
     if metrics["recurring_unbound_tasks"]:
         recurring_text = "；".join(metrics["recurring_unbound_tasks"])
         sections.append(f"【临时任务提醒】\n这些未关联目标的任务已经连续多次出现：{recurring_text}")
+
+    # Time-analysis 回流：把"近 7 日预估偏差"从复盘移到计划也用一份。
+    # Previously only the review prompt saw which tags are systematically
+    # under/overestimated. Surfacing it in morning planning lets the model
+    # warn before the user commits to yet another 90-minute block on a tag
+    # that historically runs 40% over.
+    deviation_stats = compute_deviation_signal(history, reference_date=target_date, days=7)
+    deviation_section = format_deviation_section(deviation_stats, days=7)
+    if deviation_section:
+        sections.append(deviation_section)
 
     context = "\n\n".join(sections)
     if not return_debug:

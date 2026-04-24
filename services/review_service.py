@@ -1,13 +1,17 @@
 from __future__ import annotations
 
-import datetime as dt
-from collections import Counter, defaultdict
+from collections import Counter
 
 from data.repository import retrieve_rag_chunks
 from services.goal_service import compute_goal_staleness
 from services.llm_service import get_embedding_runtime_info
 from services.rag_service import format_rag_context
-from services.task_context import goal_lookup as _goal_lookup, task_tags as _task_tags
+from services.task_context import (
+    compute_deviation_signal,
+    format_deviation_section,
+    goal_lookup as _goal_lookup,
+    task_tags as _task_tags,
+)
 from services.tracking_service import STATUS_LABEL
 
 
@@ -76,61 +80,9 @@ def _today_time_usage_section(tasks: list[dict]) -> str:
 
 
 def _recent_deviation_section(history: list[dict], reference_date: str, days: int = 7) -> str:
-    """Look across the last N days (excluding today) and summarise bias per tag."""
-    try:
-        ref = dt.date.fromisoformat(reference_date)
-    except (TypeError, ValueError):
-        return ""
-
-    window_start = ref - dt.timedelta(days=days)
-    per_tag_deltas: dict[str, list[float]] = defaultdict(list)
-    total_count = 0
-    total_delta_sum = 0.0
-
-    for record in history or []:
-        record_date = record.get("date", "")
-        try:
-            record_date_obj = dt.date.fromisoformat(record_date)
-        except ValueError:
-            continue
-        if not (window_start <= record_date_obj < ref):
-            continue
-        for task in record.get("tasks", []) or []:
-            duration = int(task.get("duration", 0) or 0)
-            actual = int(task.get("actual_minutes", 0) or 0)
-            if duration <= 0 or actual <= 0:
-                continue
-            pct = (actual - duration) / duration
-            tag = str(task.get("tag") or "未分类").strip() or "未分类"
-            per_tag_deltas[tag].append(pct)
-            total_count += 1
-            total_delta_sum += pct
-
-    if total_count == 0:
-        return ""
-
-    lines = []
-    avg_pct = total_delta_sum / total_count
-    if avg_pct > 0.10:
-        lines.append(f"- 平均每任务高估 {avg_pct * 100:.0f}%（共 {total_count} 条有效记录）")
-    elif avg_pct < -0.10:
-        lines.append(f"- 平均每任务低估 {-avg_pct * 100:.0f}%（共 {total_count} 条有效记录）")
-    else:
-        lines.append(f"- 平均偏差较小（±{abs(avg_pct) * 100:.0f}%，共 {total_count} 条记录）")
-
-    for tag, deltas in per_tag_deltas.items():
-        if len(deltas) < 2:
-            continue
-        avg = sum(deltas) / len(deltas)
-        if abs(avg) >= 0.3:
-            direction = "系统性高估" if avg > 0 else "系统性低估"
-            lines.append(f"- '{tag}' 类任务{direction} {abs(avg) * 100:.0f}%（{len(deltas)} 条）")
-        elif abs(avg) <= 0.15:
-            lines.append(f"- '{tag}' 类任务实际 vs 预计偏差较小（±{abs(avg) * 100:.0f}%，{len(deltas)} 条）")
-
-    if not lines:
-        return ""
-    return f"【近 {days} 日预估偏差】\n" + "\n".join(lines)
+    """Backward-compatible wrapper over the shared deviation helper."""
+    stats = compute_deviation_signal(history, reference_date, days=days)
+    return format_deviation_section(stats, days=days)
 
 
 def build_review_rag_query(

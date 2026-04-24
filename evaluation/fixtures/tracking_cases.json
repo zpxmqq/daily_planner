@@ -1,0 +1,200 @@
+[
+  {
+    "id": "T01-done-direct",
+    "desc": "Done note directly mirrors yesterday's top_priority — obvious done.",
+    "yesterday_rec": {
+      "date": "2026-04-20",
+      "tomorrow_suggestion": "上午 9:30-11:00 写完论文 3.2 小节实验对比，至少 1200 字。",
+      "top_priority": "9:30-11:00 写完论文 3.2 小节初稿"
+    },
+    "today_tasks": [
+      {"text": "写论文 3.2 小节", "done": true, "note": "已经写完初稿 1300 字"}
+    ],
+    "today_extra": "",
+    "expected_status": "done"
+  },
+  {
+    "id": "T02-partial-signal-word",
+    "desc": "User touched the work but note says '只做了' — partial.",
+    "yesterday_rec": {
+      "date": "2026-04-20",
+      "tomorrow_suggestion": "完成毕设答辩 PPT 第 2-4 页排版",
+      "top_priority": ""
+    },
+    "today_tasks": [
+      {"text": "答辩 PPT 排版", "done": true, "note": "只做了第 2 页和第 3 页，第 4 页还没来得及"}
+    ],
+    "today_extra": "",
+    "expected_status": "partial"
+  },
+  {
+    "id": "T03-not-obvious-unrelated",
+    "desc": "Suggestion about writing, user did only gym + reading — not_obvious.",
+    "yesterday_rec": {
+      "date": "2026-04-20",
+      "tomorrow_suggestion": "上午把论文方法章的实验数据表整理出来",
+      "top_priority": "上午整理实验数据表"
+    },
+    "today_tasks": [
+      {"text": "健身房训练", "done": true, "note": "推举 4 组"},
+      {"text": "读书 30 页", "done": true, "note": "《深度学习》第 3 章"}
+    ],
+    "today_extra": "",
+    "expected_status": "not_obvious"
+  },
+  {
+    "id": "T04-done-in-extra",
+    "desc": "Related work was logged in today_extra rather than a task.",
+    "yesterday_rec": {
+      "date": "2026-04-20",
+      "tomorrow_suggestion": "晚上把周报整理好发给导师",
+      "top_priority": "写完周报并发出"
+    },
+    "today_tasks": [
+      {"text": "实验记录整理", "done": true, "note": ""}
+    ],
+    "today_extra": "晚上把周报整理完了，已经发给导师确认。",
+    "expected_status": "done"
+  },
+  {
+    "id": "T05-partial-planned-not-done",
+    "desc": "Suggestion is in today's plan but not done yet — partial.",
+    "yesterday_rec": {
+      "date": "2026-04-20",
+      "tomorrow_suggestion": "背完 GRE 高频单词的 Unit 5-6",
+      "top_priority": "背 GRE 高频单词 Unit 5-6"
+    },
+    "today_tasks": [
+      {"text": "背 GRE 单词 Unit 5", "done": false, "note": ""},
+      {"text": "背 GRE 单词 Unit 6", "done": false, "note": ""}
+    ],
+    "today_extra": "",
+    "expected_status": "partial"
+  },
+  {
+    "id": "T06-not-obvious-empty",
+    "desc": "Empty today — cannot tell.",
+    "yesterday_rec": {
+      "date": "2026-04-20",
+      "tomorrow_suggestion": "整理简历投三家公司",
+      "top_priority": "投递 3 家简历"
+    },
+    "today_tasks": [],
+    "today_extra": "",
+    "expected_status": "not_obvious"
+  },
+  {
+    "id": "T07-done-signal-word",
+    "desc": "Clear completion signal in note.",
+    "yesterday_rec": {
+      "date": "2026-04-20",
+      "tomorrow_suggestion": "把组会汇报 PPT 做完",
+      "top_priority": "完成组会汇报 PPT"
+    },
+    "today_tasks": [
+      {"text": "组会汇报 PPT", "done": true, "note": "搞定了，导师初审过了"}
+    ],
+    "today_extra": "",
+    "expected_status": "done"
+  },
+  {
+    "id": "T08-done-without-note",
+    "desc": "Done is ticked with matching task text — still should be done.",
+    "yesterday_rec": {
+      "date": "2026-04-20",
+      "tomorrow_suggestion": "晨跑 5 公里恢复心肺",
+      "top_priority": "晨跑 5 公里"
+    },
+    "today_tasks": [
+      {"text": "晨跑 5 公里", "done": true, "note": ""}
+    ],
+    "today_extra": "",
+    "expected_status": "done"
+  },
+  {
+    "id": "T09-not-obvious-synonym-hard",
+    "desc": "Suggestion uses '写作' but done note says '论文初稿'. Hard synonym case — without embedding this is a known miss; with embedding it should be done or partial.",
+    "yesterday_rec": {
+      "date": "2026-04-20",
+      "tomorrow_suggestion": "保护上午整块写作时间至少 90 分钟",
+      "top_priority": "上午 90 分钟写作保护时段"
+    },
+    "today_tasks": [
+      {"text": "论文初稿", "done": true, "note": "上午 9 点开始写，没被打断"}
+    ],
+    "today_extra": "",
+    "expected_status": "done",
+    "allow_partial": true
+  },
+  {
+    "id": "T10-partial-cover-plan-no-done",
+    "desc": "Plan covers suggestion direction but nothing done.",
+    "yesterday_rec": {
+      "date": "2026-04-20",
+      "tomorrow_suggestion": "整理毕设第 5 章所有数据表",
+      "top_priority": "整理毕设第 5 章数据表"
+    },
+    "today_tasks": [
+      {"text": "毕设第 5 章数据表整理", "done": false, "note": ""},
+      {"text": "毕设第 5 章图表编号检查", "done": false, "note": ""}
+    ],
+    "today_extra": "",
+    "expected_status": "partial"
+  },
+  {
+    "id": "T11-no-yesterday-suggestion",
+    "desc": "Yesterday had nothing to track against — should return None.",
+    "yesterday_rec": {
+      "date": "2026-04-20",
+      "tomorrow_suggestion": "",
+      "top_priority": ""
+    },
+    "today_tasks": [
+      {"text": "任何任务", "done": true, "note": ""}
+    ],
+    "today_extra": "",
+    "expected_status": null
+  },
+  {
+    "id": "T12-done-multi-hit",
+    "desc": "Multiple token hits + done signal.",
+    "yesterday_rec": {
+      "date": "2026-04-20",
+      "tomorrow_suggestion": "上午写完论文方法章的实验对比小节",
+      "top_priority": "写完方法章实验对比小节"
+    },
+    "today_tasks": [
+      {"text": "论文方法章实验对比小节", "done": true, "note": "已经写完了实验对比"}
+    ],
+    "today_extra": "",
+    "expected_status": "done"
+  },
+  {
+    "id": "T13-not-obvious-weak-overlap",
+    "desc": "Only stopwords overlap between suggestion and today.",
+    "yesterday_rec": {
+      "date": "2026-04-20",
+      "tomorrow_suggestion": "安排 60 分钟体检报告分析",
+      "top_priority": "分析体检报告"
+    },
+    "today_tasks": [
+      {"text": "项目会议纪要整理", "done": true, "note": "安排了 3 个下周任务"}
+    ],
+    "today_extra": "",
+    "expected_status": "not_obvious"
+  },
+  {
+    "id": "T14-partial-no-note",
+    "desc": "Half of suggestion planned and done, half not even planned.",
+    "yesterday_rec": {
+      "date": "2026-04-20",
+      "tomorrow_suggestion": "上午写作 90 分钟 + 下午整理实验数据表",
+      "top_priority": "上午 90 分钟写作 + 下午整理数据表"
+    },
+    "today_tasks": [
+      {"text": "上午写作 90 分钟", "done": true, "note": "按计划完成"}
+    ],
+    "today_extra": "",
+    "expected_status": "partial"
+  }
+]

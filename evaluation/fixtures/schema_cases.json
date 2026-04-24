@@ -1,0 +1,114 @@
+[
+  {
+    "id": "S01-plan-full",
+    "kind": "plan",
+    "desc": "Normal full plan payload — not degraded.",
+    "raw_data": {
+      "overall": "方向正确，写作被守住",
+      "covers_focus": "已覆盖当前阶段重点",
+      "issues": ["下午 16 点写作和低谷期重合"],
+      "focus_tasks": ["写论文 3.2"],
+      "adjustments": ["把写作挪到 9:30"],
+      "time_assessment": "适中偏紧",
+      "top_priority": "9:30-11:00 写完 3.2 初稿 1200 字"
+    },
+    "raw_text": "",
+    "expect_degraded": false,
+    "expect_has_field": "top_priority"
+  },
+  {
+    "id": "S02-plan-error-envelope",
+    "kind": "plan",
+    "desc": "API error envelope — must be flagged degraded, overall must be empty.",
+    "raw_data": {"error": "请求超时：deepseek"},
+    "raw_text": "",
+    "expect_degraded": true,
+    "expect_empty_field": "overall"
+  },
+  {
+    "id": "S03-plan-unparseable",
+    "kind": "plan",
+    "desc": "Non-dict input (parse failed upstream) — degraded.",
+    "raw_data": null,
+    "raw_text": "抱歉，我无法生成 JSON",
+    "expect_degraded": true,
+    "expect_empty_field": "top_priority"
+  },
+  {
+    "id": "S04-plan-issues-as-string",
+    "kind": "plan",
+    "desc": "Model returned `issues` as a semicolon-delimited string — must be split into list, not degraded.",
+    "raw_data": {
+      "overall": "有瑕疵",
+      "issues": "写作时间偏晚；单词太碎",
+      "top_priority": "下午整块写作"
+    },
+    "raw_text": "",
+    "expect_degraded": false,
+    "expect_list_field": "issues",
+    "expect_list_len": 2
+  },
+  {
+    "id": "S05-plan-all-empty",
+    "kind": "plan",
+    "desc": "Model emitted `{}` — must be flagged degraded.",
+    "raw_data": {},
+    "raw_text": "{}",
+    "expect_degraded": true
+  },
+  {
+    "id": "S06-review-full",
+    "kind": "review",
+    "desc": "Normal full review payload.",
+    "raw_data": {
+      "score": "8/10",
+      "real_progress": "论文 3.2 写完了",
+      "weak_lines": "体能训练断了一天",
+      "tomorrow": "明早恢复晨跑 5 公里",
+      "focus_insight": "写作类目前低估 30%"
+    },
+    "raw_text": "",
+    "expect_degraded": false,
+    "expect_has_field": "tomorrow"
+  },
+  {
+    "id": "S07-review-error-envelope",
+    "kind": "review",
+    "desc": "API timeout — degraded, tomorrow empty.",
+    "raw_data": {"error": "API 超时（DeepSeek）"},
+    "raw_text": "",
+    "expect_degraded": true,
+    "expect_empty_field": "tomorrow"
+  },
+  {
+    "id": "S08-review-unparseable",
+    "kind": "review",
+    "desc": "Non-JSON response.",
+    "raw_data": null,
+    "raw_text": "模型直接输出了一段 markdown 而不是 JSON",
+    "expect_degraded": true,
+    "expect_empty_field": "tomorrow"
+  },
+  {
+    "id": "S09-review-all-empty",
+    "kind": "review",
+    "desc": "Empty review dict.",
+    "raw_data": {},
+    "raw_text": "",
+    "expect_degraded": true
+  },
+  {
+    "id": "S10-plan-list-as-single-item",
+    "kind": "plan",
+    "desc": "Model returned `focus_tasks` as a single un-delimited string — must be wrapped into a 1-item list.",
+    "raw_data": {
+      "overall": "基本合理",
+      "focus_tasks": "写论文 3.2 小节",
+      "top_priority": "上午写作"
+    },
+    "raw_text": "",
+    "expect_degraded": false,
+    "expect_list_field": "focus_tasks",
+    "expect_list_len": 1
+  }
+]

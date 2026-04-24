@@ -1,0 +1,485 @@
+{
+  "generated_at": "2026-04-24T02:21:06+00:00",
+  "overall": {
+    "total": 32,
+    "passed": 29,
+    "accuracy": 0.906
+  },
+  "suites": [
+    {
+      "name": "tracking",
+      "total": 14,
+      "passed": 11,
+      "accuracy": 0.786,
+      "failures": [
+        {
+          "id": "T01-done-direct",
+          "passed": false,
+          "detail": "expected 'done'; got 'not_obvious'.",
+          "expected": "done",
+          "actual": "not_obvious"
+        },
+        {
+          "id": "T07-done-signal-word",
+          "passed": false,
+          "detail": "expected 'done'; got 'partial'.",
+          "expected": "done",
+          "actual": "partial"
+        },
+        {
+          "id": "T09-not-obvious-synonym-hard",
+          "passed": false,
+          "detail": "accepted {done, partial} for hard synonym case; got 'not_obvious'.",
+          "expected": "done",
+          "actual": "not_obvious"
+        }
+      ],
+      "all_results": [
+        {
+          "id": "T01-done-direct",
+          "passed": false,
+          "detail": "expected 'done'; got 'not_obvious'.",
+          "expected": "done",
+          "actual": "not_obvious"
+        },
+        {
+          "id": "T02-partial-signal-word",
+          "passed": true,
+          "detail": "expected 'partial'; got 'partial'.",
+          "expected": "partial",
+          "actual": "partial"
+        },
+        {
+          "id": "T03-not-obvious-unrelated",
+          "passed": true,
+          "detail": "expected 'not_obvious'; got 'not_obvious'.",
+          "expected": "not_obvious",
+          "actual": "not_obvious"
+        },
+        {
+          "id": "T04-done-in-extra",
+          "passed": true,
+          "detail": "expected 'done'; got 'done'.",
+          "expected": "done",
+          "actual": "done"
+        },
+        {
+          "id": "T05-partial-planned-not-done",
+          "passed": true,
+          "detail": "expected 'partial'; got 'partial'.",
+          "expected": "partial",
+          "actual": "partial"
+        },
+        {
+          "id": "T06-not-obvious-empty",
+          "passed": true,
+          "detail": "expected 'not_obvious'; got 'not_obvious'.",
+          "expected": "not_obvious",
+          "actual": "not_obvious"
+        },
+        {
+          "id": "T07-done-signal-word",
+          "passed": false,
+          "detail": "expected 'done'; got 'partial'.",
+          "expected": "done",
+          "actual": "partial"
+        },
+        {
+          "id": "T08-done-without-note",
+          "passed": true,
+          "detail": "expected 'done'; got 'done'.",
+          "expected": "done",
+          "actual": "done"
+        },
+        {
+          "id": "T09-not-obvious-synonym-hard",
+          "passed": false,
+          "detail": "accepted {done, partial} for hard synonym case; got 'not_obvious'.",
+          "expected": "done",
+          "actual": "not_obvious"
+        },
+        {
+          "id": "T10-partial-cover-plan-no-done",
+          "passed": true,
+          "detail": "expected 'partial'; got 'partial'.",
+          "expected": "partial",
+          "actual": "partial"
+        },
+        {
+          "id": "T11-no-yesterday-suggestion",
+          "passed": true,
+          "detail": "expected None (no suggestion); matched.",
+          "expected": null,
+          "actual": null
+        },
+        {
+          "id": "T12-done-multi-hit",
+          "passed": true,
+          "detail": "expected 'done'; got 'done'.",
+          "expected": "done",
+          "actual": "done"
+        },
+        {
+          "id": "T13-not-obvious-weak-overlap",
+          "passed": true,
+          "detail": "expected 'not_obvious'; got 'not_obvious'.",
+          "expected": "not_obvious",
+          "actual": "not_obvious"
+        },
+        {
+          "id": "T14-partial-no-note",
+          "passed": true,
+          "detail": "expected 'partial'; got 'partial'.",
+          "expected": "partial",
+          "actual": "partial"
+        }
+      ]
+    },
+    {
+      "name": "schemas",
+      "total": 10,
+      "passed": 10,
+      "accuracy": 1.0,
+      "failures": [],
+      "all_results": [
+        {
+          "id": "S01-plan-full",
+          "passed": true,
+          "detail": "ok",
+          "expected": {
+            "expect_degraded": false,
+            "expect_has_field": "top_priority"
+          },
+          "actual": {
+            "degraded": false,
+            "keys": [
+              "adjustments",
+              "covers_focus",
+              "degraded",
+              "focus_tasks",
+              "issues",
+              "overall",
+              "time_assessment",
+              "top_priority"
+            ]
+          }
+        },
+        {
+          "id": "S02-plan-error-envelope",
+          "passed": true,
+          "detail": "ok",
+          "expected": {
+            "expect_degraded": true,
+            "expect_empty_field": "overall"
+          },
+          "actual": {
+            "degraded": true,
+            "keys": [
+              "adjustments",
+              "covers_focus",
+              "degraded",
+              "degraded_reason",
+              "error",
+              "focus_tasks",
+              "issues",
+              "overall",
+              "time_assessment",
+              "top_priority"
+            ]
+          }
+        },
+        {
+          "id": "S03-plan-unparseable",
+          "passed": true,
+          "detail": "ok",
+          "expected": {
+            "expect_degraded": true,
+            "expect_empty_field": "top_priority"
+          },
+          "actual": {
+            "degraded": true,
+            "keys": [
+              "adjustments",
+              "covers_focus",
+              "degraded",
+              "degraded_reason",
+              "focus_tasks",
+              "issues",
+              "overall",
+              "raw_excerpt",
+              "time_assessment",
+              "top_priority"
+            ]
+          }
+        },
+        {
+          "id": "S04-plan-issues-as-string",
+          "passed": true,
+          "detail": "ok",
+          "expected": {
+            "expect_degraded": false,
+            "expect_list_field": "issues",
+            "expect_list_len": 2
+          },
+          "actual": {
+            "degraded": false,
+            "keys": [
+              "adjustments",
+              "covers_focus",
+              "degraded",
+              "focus_tasks",
+              "issues",
+              "overall",
+              "time_assessment",
+              "top_priority"
+            ]
+          }
+        },
+        {
+          "id": "S05-plan-all-empty",
+          "passed": true,
+          "detail": "ok",
+          "expected": {
+            "expect_degraded": true
+          },
+          "actual": {
+            "degraded": true,
+            "keys": [
+              "adjustments",
+              "covers_focus",
+              "degraded",
+              "degraded_reason",
+              "focus_tasks",
+              "issues",
+              "overall",
+              "raw_excerpt",
+              "time_assessment",
+              "top_priority"
+            ]
+          }
+        },
+        {
+          "id": "S06-review-full",
+          "passed": true,
+          "detail": "ok",
+          "expected": {
+            "expect_degraded": false,
+            "expect_has_field": "tomorrow"
+          },
+          "actual": {
+            "degraded": false,
+            "keys": [
+              "degraded",
+              "focus_insight",
+              "real_progress",
+              "score",
+              "tomorrow",
+              "weak_lines"
+            ]
+          }
+        },
+        {
+          "id": "S07-review-error-envelope",
+          "passed": true,
+          "detail": "ok",
+          "expected": {
+            "expect_degraded": true,
+            "expect_empty_field": "tomorrow"
+          },
+          "actual": {
+            "degraded": true,
+            "keys": [
+              "degraded",
+              "degraded_reason",
+              "error",
+              "focus_insight",
+              "real_progress",
+              "score",
+              "tomorrow",
+              "weak_lines"
+            ]
+          }
+        },
+        {
+          "id": "S08-review-unparseable",
+          "passed": true,
+          "detail": "ok",
+          "expected": {
+            "expect_degraded": true,
+            "expect_empty_field": "tomorrow"
+          },
+          "actual": {
+            "degraded": true,
+            "keys": [
+              "degraded",
+              "degraded_reason",
+              "focus_insight",
+              "raw_excerpt",
+              "real_progress",
+              "score",
+              "tomorrow",
+              "weak_lines"
+            ]
+          }
+        },
+        {
+          "id": "S09-review-all-empty",
+          "passed": true,
+          "detail": "ok",
+          "expected": {
+            "expect_degraded": true
+          },
+          "actual": {
+            "degraded": true,
+            "keys": [
+              "degraded",
+              "degraded_reason",
+              "focus_insight",
+              "raw_excerpt",
+              "real_progress",
+              "score",
+              "tomorrow",
+              "weak_lines"
+            ]
+          }
+        },
+        {
+          "id": "S10-plan-list-as-single-item",
+          "passed": true,
+          "detail": "ok",
+          "expected": {
+            "expect_degraded": false,
+            "expect_list_field": "focus_tasks",
+            "expect_list_len": 1
+          },
+          "actual": {
+            "degraded": false,
+            "keys": [
+              "adjustments",
+              "covers_focus",
+              "degraded",
+              "focus_tasks",
+              "issues",
+              "overall",
+              "time_assessment",
+              "top_priority"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "classification",
+      "total": 8,
+      "passed": 8,
+      "accuracy": 1.0,
+      "failures": [],
+      "all_results": [
+        {
+          "id": "C01-keyword-fitness",
+          "passed": true,
+          "detail": "tag='健身'(expect '健身') source='keyword'(expect 'keyword')",
+          "expected": {
+            "tag": "健身",
+            "source": "keyword"
+          },
+          "actual": {
+            "tag": "健身",
+            "source": "keyword"
+          }
+        },
+        {
+          "id": "C02-keyword-thesis",
+          "passed": true,
+          "detail": "tag='论文'(expect '论文') source='keyword'(expect 'keyword')",
+          "expected": {
+            "tag": "论文",
+            "source": "keyword"
+          },
+          "actual": {
+            "tag": "论文",
+            "source": "keyword"
+          }
+        },
+        {
+          "id": "C03-keyword-english",
+          "passed": true,
+          "detail": "tag='英语'(expect '英语') source='keyword'(expect 'keyword')",
+          "expected": {
+            "tag": "英语",
+            "source": "keyword"
+          },
+          "actual": {
+            "tag": "英语",
+            "source": "keyword"
+          }
+        },
+        {
+          "id": "C04-manual-override",
+          "passed": true,
+          "detail": "tag='项目'(expect '项目') source='manual'(expect 'manual')",
+          "expected": {
+            "tag": "项目",
+            "source": "manual"
+          },
+          "actual": {
+            "tag": "项目",
+            "source": "manual"
+          }
+        },
+        {
+          "id": "C05-unplanned-fallback",
+          "passed": true,
+          "detail": "tag='突发'(expect '突发') source='unplanned'(expect 'unplanned')",
+          "expected": {
+            "tag": "突发",
+            "source": "unplanned"
+          },
+          "actual": {
+            "tag": "突发",
+            "source": "unplanned"
+          }
+        },
+        {
+          "id": "C06-other-fallback",
+          "passed": true,
+          "detail": "tag='其他'(expect '其他') source='fallback'(expect 'fallback')",
+          "expected": {
+            "tag": "其他",
+            "source": "fallback"
+          },
+          "actual": {
+            "tag": "其他",
+            "source": "fallback"
+          }
+        },
+        {
+          "id": "C07-keyword-internship",
+          "passed": true,
+          "detail": "tag='实习'(expect '实习') source='keyword'(expect 'keyword')",
+          "expected": {
+            "tag": "实习",
+            "source": "keyword"
+          },
+          "actual": {
+            "tag": "实习",
+            "source": "keyword"
+          }
+        },
+        {
+          "id": "C08-keyword-course",
+          "passed": true,
+          "detail": "tag='课程'(expect '课程') source='keyword'(expect 'keyword')",
+          "expected": {
+            "tag": "课程",
+            "source": "keyword"
+          },
+          "actual": {
+            "tag": "课程",
+            "source": "keyword"
+          }
+        }
+      ]
+    }
+  ]
+}

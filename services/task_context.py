@@ -10,6 +10,7 @@ tweaks land in one place and lets tests cover the mapping logic once.
 from __future__ import annotations
 
 import datetime as dt
+from collections import defaultdict
 from typing import Iterable
 
 
@@ -106,3 +107,101 @@ def is_goal_relevant_today(
             return True
 
     return False
+
+
+# ---------------------------------------------------------------------------
+# Time-analysis deviation signal
+# ---------------------------------------------------------------------------
+# Previously only the review pipeline computed this. The planning pipeline
+# benefits equally: if "论文" tasks are systematically underestimated by 40%
+# across the last week, the morning plan evaluation should warn before the
+# user commits to yet another 90-minute writing block.
+
+
+def compute_deviation_signal(
+    history: Iterable[dict],
+    reference_date: str | dt.date | None,
+    days: int = 7,
+) -> dict:
+    """Return structured over/underestimation stats over the last N days.
+
+    The result is always a dict with the same keys so callers don't need to
+    branch on empty state:
+
+    ``{"count": int, "avg_pct": float, "per_tag": {tag: (avg_pct, n)}}``
+
+    A count of 0 means "no signal available" — callers should skip rendering.
+    """
+    if isinstance(reference_date, str):
+        ref = safe_date(reference_date)
+    else:
+        ref = reference_date
+    if ref is None:
+        return {"count": 0, "avg_pct": 0.0, "per_tag": {}}
+
+    window_start = ref - dt.timedelta(days=days)
+    per_tag_deltas: dict[str, list[float]] = defaultdict(list)
+    total_count = 0
+    total_delta_sum = 0.0
+
+    for record in history or []:
+        rd = safe_date(record.get("date", ""))
+        if not rd or not (window_start <= rd < ref):
+            continue
+        for task in record.get("tasks", []) or []:
+            duration = int(task.get("duration", 0) or 0)
+            actual = int(task.get("actual_minutes", 0) or 0)
+            if duration <= 0 or actual <= 0:
+                continue
+            pct = (actual - duration) / duration
+            tag = str(task.get("tag") or "未分类").strip() or "未分类"
+            per_tag_deltas[tag].append(pct)
+            total_count += 1
+            total_delta_sum += pct
+
+    if total_count == 0:
+        return {"count": 0, "avg_pct": 0.0, "per_tag": {}}
+
+    per_tag = {
+        tag: (sum(deltas) / len(deltas), len(deltas))
+        for tag, deltas in per_tag_deltas.items()
+    }
+    return {
+        "count": total_count,
+        "avg_pct": total_delta_sum / total_count,
+        "per_tag": per_tag,
+    }
+
+
+def format_deviation_section(stats: dict, days: int = 7, heading: str | None = None) -> str:
+    """Turn ``compute_deviation_signal`` output into a prompt-ready block.
+
+    Returns an empty string when there's nothing worth saying so the caller
+    can just ``if section: sections.append(section)``.
+    """
+    if not stats or stats.get("count", 0) == 0:
+        return ""
+
+    lines: list[str] = []
+    avg_pct = stats["avg_pct"]
+    total_count = stats["count"]
+    if avg_pct > 0.10:
+        lines.append(f"- 平均每任务高估 {avg_pct * 100:.0f}%（共 {total_count} 条有效记录）")
+    elif avg_pct < -0.10:
+        lines.append(f"- 平均每任务低估 {-avg_pct * 100:.0f}%（共 {total_count} 条有效记录）")
+    else:
+        lines.append(f"- 平均偏差较小（±{abs(avg_pct) * 100:.0f}%，共 {total_count} 条记录）")
+
+    for tag, (avg, n) in stats["per_tag"].items():
+        if n < 2:
+            continue
+        if abs(avg) >= 0.3:
+            direction = "系统性高估" if avg > 0 else "系统性低估"
+            lines.append(f"- '{tag}' 类任务{direction} {abs(avg) * 100:.0f}%（{n} 条）")
+        elif abs(avg) <= 0.15:
+            lines.append(f"- '{tag}' 类任务实际 vs 预计偏差较小（±{abs(avg) * 100:.0f}%，{n} 条）")
+
+    if not lines:
+        return ""
+    title = heading or f"【近 {days} 日预估偏差】"
+    return f"{title}\n" + "\n".join(lines)

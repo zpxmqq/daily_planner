@@ -1,0 +1,74 @@
+[
+  {
+    "id": "C01-keyword-fitness",
+    "desc": "Direct fitness keyword.",
+    "task_text": "晨跑 5 公里",
+    "user_tag": "",
+    "is_unplanned": false,
+    "expected_tag": "健身",
+    "expected_source": "keyword"
+  },
+  {
+    "id": "C02-keyword-thesis",
+    "desc": "Thesis keyword — 综述 is user-agnostic.",
+    "task_text": "写论文综述第三节",
+    "user_tag": "",
+    "is_unplanned": false,
+    "expected_tag": "论文",
+    "expected_source": "keyword"
+  },
+  {
+    "id": "C03-keyword-english",
+    "desc": "English learning.",
+    "task_text": "雅思口语练 30 分钟",
+    "user_tag": "",
+    "is_unplanned": false,
+    "expected_tag": "英语",
+    "expected_source": "keyword"
+  },
+  {
+    "id": "C04-manual-override",
+    "desc": "User tag always wins.",
+    "task_text": "随便写的任务",
+    "user_tag": "项目",
+    "is_unplanned": false,
+    "expected_tag": "项目",
+    "expected_source": "manual"
+  },
+  {
+    "id": "C05-unplanned-fallback",
+    "desc": "No keyword hit, marked unplanned.",
+    "task_text": "帮同学搬宿舍",
+    "user_tag": "",
+    "is_unplanned": true,
+    "expected_tag": "突发",
+    "expected_source": "unplanned"
+  },
+  {
+    "id": "C06-other-fallback",
+    "desc": "No keyword hit, not unplanned.",
+    "task_text": "洗衣服",
+    "user_tag": "",
+    "is_unplanned": false,
+    "expected_tag": "其他",
+    "expected_source": "fallback"
+  },
+  {
+    "id": "C07-keyword-internship",
+    "desc": "Internship synonym.",
+    "task_text": "投递 3 家公司简历",
+    "user_tag": "",
+    "is_unplanned": false,
+    "expected_tag": "实习",
+    "expected_source": "keyword"
+  },
+  {
+    "id": "C08-keyword-course",
+    "desc": "Course synonym.",
+    "task_text": "看机器学习网课 Chapter 4",
+    "user_tag": "",
+    "is_unplanned": false,
+    "expected_tag": "课程",
+    "expected_source": "keyword"
+  }
+]

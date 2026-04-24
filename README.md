@@ -258,6 +258,16 @@ config/tag_keywords.json
 
 文件结构为 `{"标签名": ["关键词1", "关键词2", ...]}`。运行时会与内置的通用同义词合并，如果文件缺失或 JSON 非法，系统自动降级到内置词典，主流程不受影响。建议把用户专属的词汇（论文章节号、课题代号、公司内部系统名等）放在这里，让内置词典保持通用。
 
+### 离线评测（质量证据）
+
+规则层（tracking、LLM JSON normalizer、自动标签）有一套离线评测样本，用来替代“我觉得准”这类无证据说法：
+
+```bash
+python -m evaluation.run_evals
+```
+
+会在 `evaluation/last_report.json` 写入本地样本上的准确率（示例：tracking 14 例、normalizer 10 例、classification 8 例），"历史"页底部会读取这份报告渲染一张质量面板。所有样本和期望标签都在 `evaluation/fixtures/` 里，新增/修正样本只需改 JSON。
+
 ## 使用流程
 
 1. 进入“个人信息”页，填写长期背景与长期目标
