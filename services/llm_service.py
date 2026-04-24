@@ -1,177 +1,105 @@
+"""Thin orchestration layer over the provider registry.
+
+Historically this module owned both the OpenAI SDK calls and the per-call
+error handling. As of the provider refactor, those responsibilities moved
+into ``services/providers/``; what stays here is:
+
+  - the JSON-parse helper shared by all chat callers,
+  - the feedback-style tweak that mutates the system prompt,
+  - the three high-level ``generate_*`` wrappers that bolt the schema
+    normalizer on top of a raw provider call.
+
+New backends land entirely inside ``services/providers/``; this module
+does not need to change to add one.
+"""
+
+from __future__ import annotations
+
 import json
 import logging
-import math
-import os
-import re
-import hashlib
 
-import streamlit as st
-from openai import OpenAI
-
-from config.settings import (
-    BASE_URL,
-    EMBEDDING_API_KEY,
-    EMBEDDING_BASE_URL,
-    EMBEDDING_MODEL,
-    LOCAL_EMBEDDING_FALLBACK,
-    MODEL_NAME,
-)
 from prompts.plan_prompt import PLAN_SYSTEM_PROMPT
 from prompts.profile_prompt import PROFILE_EXTRACTION_PROMPT
 from prompts.review_prompt import REVIEW_SYSTEM_PROMPT
 from services.llm_schemas import normalize_plan_feedback, normalize_review_feedback
-from services.metrics import log_event
+from services.providers import (
+    get_chat_provider,
+    get_embedding_provider,
+)
 
 LOGGER = logging.getLogger(__name__)
-LOCAL_EMBEDDING_MODEL = "local-hash-v1"
-_LOCAL_EMBEDDING_DIM = 256
 
 
-@st.cache_resource
-def get_client():
-    return OpenAI(api_key=os.getenv("DEEPSEEK_API_KEY"), base_url=BASE_URL)
-
-
-@st.cache_resource
-def get_embedding_client():
-    api_key = EMBEDDING_API_KEY or os.getenv("EMBEDDING_API_KEY", "").strip()
-    if not api_key:
-        return None
-
-    base_url = EMBEDDING_BASE_URL or os.getenv("EMBEDDING_BASE_URL", "").strip()
-    kwargs = {"api_key": api_key}
-    if base_url:
-        kwargs["base_url"] = base_url
-    return OpenAI(**kwargs)
+# ---------------------------------------------------------------------------
+# Backwards-compatible helpers
+# ---------------------------------------------------------------------------
+# ``llm_service`` used to expose several little getters (``get_embedding_backend``,
+# ``get_embedding_model_name``, ``get_embedding_runtime_info``,
+# ``embedding_enabled``). Downstream modules (tracking, classification, RAG,
+# debug panels) import these names directly. We keep them as thin facades over
+# the provider so the migration stays zero-churn.
 
 
 def get_embedding_backend() -> str:
-    api_key = EMBEDDING_API_KEY or os.getenv("EMBEDDING_API_KEY", "").strip()
-    if api_key:
-        return "api"
-    if LOCAL_EMBEDDING_FALLBACK:
+    """Return a short string describing the active embedding backend.
+
+    Values: ``"api"`` when an OpenAI-compatible endpoint is configured,
+    ``"local"`` when only the hash fallback is active, ``"disabled"``
+    when neither is available.
+    """
+    provider = get_embedding_provider()
+    name = provider.info().name
+    if name == "auto_fallback":
+        # Composite provider — inspect its primary.
+        primary = provider.info().extras.get("primary", {})
+        if primary.get("ready"):
+            return "api"
+        return "local"
+    if name == "openai_compat":
+        return "api" if provider.info().ready else "disabled"
+    if name == "local_hash":
         return "local"
     return "disabled"
 
 
 def get_embedding_model_name() -> str:
-    if get_embedding_backend() == "api":
-        return EMBEDDING_MODEL or os.getenv("EMBEDDING_MODEL", "text-embedding-3-small").strip()
-    if get_embedding_backend() == "local":
-        return LOCAL_EMBEDDING_MODEL
-    return ""
+    return get_embedding_provider().info().model or ""
 
 
 def get_embedding_runtime_info() -> dict:
+    """Structured description of the embedding backend for UI panels."""
+    info = get_embedding_provider().info()
     backend = get_embedding_backend()
     return {
         "backend": backend,
-        "model": get_embedding_model_name(),
-        "ready": backend in {"api", "local"},
-        "note": (
-            "当前使用 API embedding。"
-            if backend == "api"
-            else "当前使用本地轻量 embedding fallback。"
-            if backend == "local"
-            else "当前未启用 embedding。"
-        ),
+        "model": info.model,
+        "ready": info.ready,
+        "note": info.note,
+        "provider_name": info.name,
+        **{k: v for k, v in info.extras.items() if k in {"primary", "fallback"}},
     }
 
 
 def embedding_enabled() -> bool:
-    return get_embedding_backend() in {"api", "local"}
+    provider = get_embedding_provider()
+    return bool(provider.enabled and provider.info().ready)
 
 
-def _tokenize_for_local_embedding(text: str) -> list[str]:
-    content = str(text or "").strip().lower()
-    if not content:
-        return []
-
-    tokens = re.findall(r"[\u4e00-\u9fff]{2,}|[a-z0-9_]{2,}", content)
-    compact = re.sub(r"\s+", "", content)
-    bigrams = [compact[index : index + 2] for index in range(max(len(compact) - 1, 0))]
-    return tokens + bigrams
-
-
-def _local_embed_text(text: str) -> list[float]:
-    tokens = _tokenize_for_local_embedding(text)
-    if not tokens:
-        return []
-
-    vector = [0.0] * _LOCAL_EMBEDDING_DIM
-    for token in tokens:
-        digest = hashlib.blake2b(token.encode("utf-8"), digest_size=8).digest()
-        index = int.from_bytes(digest, "big") % _LOCAL_EMBEDDING_DIM
-        sign = 1.0 if digest[0] % 2 == 0 else -1.0
-        weight = 1.0 + min(len(token), 8) * 0.12
-        vector[index] += sign * weight
-
-    norm = math.sqrt(sum(value * value for value in vector))
-    if norm == 0:
-        return []
-    return [round(value / norm, 8) for value in vector]
+# ---------------------------------------------------------------------------
+# Chat + embedding call sites
+# ---------------------------------------------------------------------------
 
 
 def call_api(system_prompt: str, user_content: str) -> str:
-    client = get_client()
-    try:
-        response = client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_content},
-            ],
-            timeout=30,
-        )
-        return response.choices[0].message.content or ""
-    except Exception as exc:
-        if "timeout" in str(exc).lower():
-            log_event("llm.call_timeout", {"model": MODEL_NAME}, level="warning")
-            return '{"error":"请求超时，请稍后重试。"}'
-        log_event(
-            "llm.call_failed",
-            {"model": MODEL_NAME, "error": str(exc)[:200]},
-            level="warning",
-        )
-        return json.dumps({"error": f"调用失败：{exc}"}, ensure_ascii=False)
+    """Call the active chat provider. Return the raw text (possibly an
+    error-envelope JSON so existing ``parse_json_safe`` keeps working)."""
+    result = get_chat_provider().complete(system_prompt, user_content)
+    return result.text
 
 
 def embed_texts(texts: list[str]) -> list[list[float]]:
-    vectors = [[] for _ in texts]
-    indexed_texts = [(index, text.strip()) for index, text in enumerate(texts) if str(text).strip()]
-    if not indexed_texts:
-        return vectors
-
-    backend = get_embedding_backend()
-    if backend == "local":
-        for index, text in indexed_texts:
-            vectors[index] = _local_embed_text(text)
-        return vectors
-
-    client = get_embedding_client()
-    if client is None:
-        return vectors
-
-    try:
-        response = client.embeddings.create(
-            model=get_embedding_model_name(),
-            input=[text for _, text in indexed_texts],
-            timeout=30,
-        )
-        for (index, _), item in zip(indexed_texts, response.data):
-            vectors[index] = item.embedding
-    except Exception as exc:
-        LOGGER.warning("Embedding request failed: %s", exc)
-        log_event(
-            "embedding.api_failed",
-            {"model": get_embedding_model_name(), "error": str(exc)[:200]},
-            level="warning",
-        )
-        if LOCAL_EMBEDDING_FALLBACK:
-            log_event("embedding.local_fallback_used", {"reason": "api_failed"})
-            for index, text in indexed_texts:
-                vectors[index] = _local_embed_text(text)
-    return vectors
+    """Embed a batch. Slots whose input was empty or failed come back as ``[]``."""
+    return get_embedding_provider().embed(texts)
 
 
 def parse_json_safe(text: str) -> dict | None:

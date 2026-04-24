@@ -248,6 +248,16 @@ EMBEDDING_MODEL=your_embedding_model
 
 如果不配置 embedding 接口，系统会自动走本地 fallback，不影响主流程运行。
 
+### Provider 抽象（更换 LLM/embedding 后端）
+
+`services/providers/` 把 LLM 与 embedding 后端从业务代码中抽离：
+
+- `openai_compat.py` 覆盖任何 OpenAI 兼容接口（DeepSeek、OpenAI、Moonshot、Zhipu v4、vLLM 等）
+- `local_hash.py` 提供本地哈希 embedding 兜底
+- `registry.py` 统一选型：embedding 可用时走 API，并在单次请求失败时自动按槽位回落到本地兜底
+
+新增一个后端只需要在 `services/providers/` 里加一个文件并实现 `LLMProvider` 或 `EmbeddingProvider` 协议（见 `base.py`），其他业务代码无需改动。
+
 ### 自定义关键词词典
 
 标签自动识别的关键词可以通过外部 JSON 文件扩充，不必改源码：
